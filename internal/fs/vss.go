@@ -3,6 +3,8 @@
 package fs
 
 import (
+	"time"
+
 	"github.com/restic/restic/internal/errors"
 )
 
@@ -33,7 +35,7 @@ func HasSufficientPrivilegesForVSS() error {
 // NewVssSnapshot creates a new vss snapshot. If creating the snapshots doesn't
 // finish within the timeout an error is returned.
 func NewVssSnapshot(
-	volume string, timeoutInSeconds uint, msgError ErrorHandler) (VssSnapshot, error) {
+	volume string, timeout time.Duration, msgError ErrorHandler) (VssSnapshot, error) {
 	return VssSnapshot{}, errors.New("VSS snapshots are only supported on windows")
 }
 

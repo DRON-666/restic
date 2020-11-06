@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	ole "github.com/go-ole/go-ole"
@@ -616,8 +617,13 @@ func (vssAsync *IVSSAsync) QueryStatus() (HRESULT, uint32) {
 
 // WaitUntilAsyncFinished waits until either the async call is finshed or
 // the given timeout is reached.
-func (vssAsync *IVSSAsync) WaitUntilAsyncFinished(millis uint32) error {
-	hresult := vssAsync.Wait(millis)
+func (vssAsync *IVSSAsync) WaitUntilAsyncFinished(timeout time.Duration) error {
+	const maxTimeout = 2147483647 * time.Millisecond
+	if timeout > maxTimeout {
+		timeout = maxTimeout
+	}
+
+	hresult := vssAsync.Wait(uint32(timeout.Milliseconds()))
 	err := newVssErrorIfResultNotOK("Wait() failed", hresult)
 	if err != nil {
 		vssAsync.Cancel()
@@ -676,7 +682,7 @@ type VssSnapshot struct {
 	snapshotProperties   VssSnapshotProperties
 	snapshotDeviceObject string
 	mountPointInfo       map[string]MountPoint
-	timeoutInMillis      uint32
+	timeout              time.Duration
 }
 
 // GetSnapshotDeviceObject returns root path to access the snapshot files
@@ -729,7 +735,7 @@ func HasSufficientPrivilegesForVSS() error {
 // NewVssSnapshot creates a new vss snapshot. If creating the snapshots doesn't
 // finish within the timeout an error is returned.
 func NewVssSnapshot(
-	volume string, timeoutInSeconds uint, msgError ErrorHandler) (VssSnapshot, error) {
+	volume string, timeout time.Duration, msgError ErrorHandler) (VssSnapshot, error) {
 	is64Bit, err := isRunningOn64BitWindows()
 
 	if err != nil {
@@ -743,7 +749,7 @@ func NewVssSnapshot(
 			runtime.GOARCH))
 	}
 
-	timeoutInMillis := uint32(timeoutInSeconds * 1000)
+	deadline := time.Now().Add(timeout)
 
 	oleIUnknown, err := initializeVssCOMInterface()
 	if oleIUnknown != nil {
@@ -795,7 +801,7 @@ func NewVssSnapshot(
 	}
 
 	err = callAsyncFunctionAndWait(iVssBackupComponents.GatherWriterMetadata,
-		"GatherWriterMetadata", timeoutInMillis)
+		"GatherWriterMetadata", deadline)
 	if err != nil {
 		iVssBackupComponents.Release()
 		return VssSnapshot{}, err
@@ -853,7 +859,7 @@ func NewVssSnapshot(
 	}
 
 	err = callAsyncFunctionAndWait(iVssBackupComponents.PrepareForBackup, "PrepareForBackup",
-		timeoutInMillis)
+		deadline)
 	if err != nil {
 		// After calling PrepareForBackup one needs to call AbortBackup() before releasing the VSS
 		// instance for proper cleanup.
@@ -864,7 +870,7 @@ func NewVssSnapshot(
 	}
 
 	err = callAsyncFunctionAndWait(iVssBackupComponents.DoSnapshotSet, "DoSnapshotSet",
-		timeoutInMillis)
+		deadline)
 	if err != nil {
 		iVssBackupComponents.AbortBackup()
 		iVssBackupComponents.Release()
@@ -900,7 +906,7 @@ func NewVssSnapshot(
 	}
 
 	return VssSnapshot{iVssBackupComponents, snapshotSetID, snapshotProperties,
-		snapshotProperties.GetSnapshotDeviceObject(), mountPointInfo, timeoutInMillis}, nil
+		snapshotProperties.GetSnapshotDeviceObject(), mountPointInfo, time.Until(deadline)}, nil
 }
 
 // Delete deletes the created snapshot.
@@ -921,8 +927,10 @@ func (p *VssSnapshot) Delete() error {
 	if p.iVssBackupComponents != nil {
 		defer p.iVssBackupComponents.Release()
 
+		deadline := time.Now().Add(p.timeout)
+
 		err = callAsyncFunctionAndWait(p.iVssBackupComponents.BackupComplete, "BackupComplete",
-			p.timeoutInMillis)
+			deadline)
 		if err != nil {
 			return err
 		}
@@ -944,7 +952,7 @@ type asyncCallFunc func() (*IVSSAsync, error)
 
 // callAsyncFunctionAndWait calls an async functions and waits for it to either
 // finish or timeout.
-func callAsyncFunctionAndWait(function asyncCallFunc, name string, timeoutInMillis uint32) error {
+func callAsyncFunctionAndWait(function asyncCallFunc, name string, deadline time.Time) error {
 	iVssAsync, err := function()
 	if err != nil {
 		return err
@@ -954,7 +962,12 @@ func callAsyncFunctionAndWait(function asyncCallFunc, name string, timeoutInMill
 		return newVssTextError(fmt.Sprintf("%s() returned nil", name))
 	}
 
-	err = iVssAsync.WaitUntilAsyncFinished(timeoutInMillis)
+	timeout := time.Until(deadline)
+	if timeout <= 0 {
+		return newVssTextError(fmt.Sprintf("%s() deadline exceeded", name))
+	}
+
+	err = iVssAsync.WaitUntilAsyncFinished(timeout)
 	iVssAsync.Release()
 	return err
 }
