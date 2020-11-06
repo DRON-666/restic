@@ -496,7 +496,16 @@ func findParentSnapshot(ctx context.Context, repo restic.Repository, opts Backup
 }
 
 func runBackup(opts BackupOptions, gopts GlobalOptions, term *termstatus.Terminal, args []string) error {
-	err := opts.Check(gopts, args)
+	var vsscfg fs.VSSConfig
+	var err error
+
+	if runtime.GOOS == "windows" {
+		if vsscfg, err = fs.ParseVSSConfig(gopts.extended); err != nil {
+			return err
+		}
+	}
+
+	err = opts.Check(gopts, args)
 	if err != nil {
 		return err
 	}
@@ -641,7 +650,7 @@ func runBackup(opts BackupOptions, gopts GlobalOptions, term *termstatus.Termina
 			}
 		}
 
-		localVss := fs.NewLocalVss(errorHandler, messageHandler)
+		localVss := fs.NewLocalVss(errorHandler, messageHandler, vsscfg)
 		defer localVss.DeleteSnapshots()
 		targetFS = localVss
 	}
