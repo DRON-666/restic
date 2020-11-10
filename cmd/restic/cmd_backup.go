@@ -640,8 +640,8 @@ func runBackup(opts BackupOptions, gopts GlobalOptions, term *termstatus.Termina
 			return err
 		}
 
-		errorHandler := func(item string, err error) error {
-			return p.Error(item, nil, err)
+		errorHandler := func(item string, err error) {
+			_ = p.Error(item, nil, err)
 		}
 
 		messageHandler := func(msg string, args ...interface{}) {
