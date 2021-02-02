@@ -117,6 +117,13 @@ func (b *Local) Save(ctx context.Context, h restic.Handle, rd restic.RewindReade
 		return errors.Wrap(err, "OpenFile")
 	}
 
+	// preallocate disk space
+	if size := rd.Length(); size > 0 {
+		if err := fs.PreallocateFile(f, size); err != nil {
+			debug.Log("Failed to preallocate %v with size %v: %v", filename, size, err)
+		}
+	}
+
 	// save data, then sync
 	wbytes, err := io.Copy(f, rd)
 	if err != nil {
