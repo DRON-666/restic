@@ -1,4 +1,4 @@
-package restorer
+package fs
 
 import (
 	"os"
@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/restic/restic/internal/fs"
 	"github.com/restic/restic/internal/test"
 )
 
@@ -23,13 +22,13 @@ func TestPreallocate(t *testing.T) {
 				test.OK(t, wr.Close())
 			}()
 
-			err = preallocateFile(wr, i)
+			err = PreallocateFile(wr, i)
 			test.OK(t, err)
 
 			fi, err := wr.Stat()
 			test.OK(t, err)
 
-			efi := fs.ExtendedStat(fi)
+			efi := ExtendedStat(fi)
 			test.Assert(t, efi.Size == i || efi.Blocks > 0, "Preallocated size of %v, got size %v block %v", i, efi.Size, efi.Blocks)
 		})
 	}
