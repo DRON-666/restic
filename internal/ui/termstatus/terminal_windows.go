@@ -4,7 +4,9 @@ package termstatus
 
 import (
 	"io"
+	"regexp"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -80,6 +82,33 @@ func isPipe(fd uintptr) bool {
 	return err == nil && typ == windows.FILE_TYPE_PIPE
 }
 
+func getFileNameByHandle(fd uintptr) (string, error) {
+	var ni struct {
+		FileNameLength uint32
+		FileName       [windows.MAX_LONG_PATH]uint16
+	}
+	err := windows.GetFileInformationByHandleEx(windows.Handle(fd), 2, (*byte)(unsafe.Pointer(&ni)), uint32(unsafe.Sizeof(ni)))
+	if err != nil {
+		return "", err
+	}
+
+	return string(utf16.Decode(ni.FileName[:ni.FileNameLength])), nil
+}
+
+func isMintty(fd uintptr) bool {
+	s, err := getFileNameByHandle(fd)
+	if err != nil {
+		return false
+	}
+
+	matched, err := regexp.MatchString(`\\(?:cygwin|msys)-[[:xdigit:]]+-pty\d+-to-master`, s)
+	if err != nil {
+		panic(err)
+	}
+
+	return matched
+}
+
 // canUpdateStatus returns true if status lines can be printed, the process
 // output is not redirected to a file or pipe.
 func canUpdateStatus(fd uintptr) bool {
@@ -93,6 +122,6 @@ func canUpdateStatus(fd uintptr) bool {
 		return false
 	}
 
-	// assume we're running in mintty/cygwin
-	return true
+	// check that we're running in mintty/cygwin
+	return isMintty(fd)
 }
