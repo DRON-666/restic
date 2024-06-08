@@ -116,7 +116,7 @@ func (fs *LocalVss) DeleteSnapshots() {
 	activeSnapshots := make(map[string]VssSnapshot)
 
 	for volumeName, snapshot := range fs.snapshots {
-		if err := snapshot.Delete(); err != nil {
+		if err := snapshot.Delete(fs.msgError); err != nil {
 			fs.msgError(volumeName, errors.Errorf("failed to delete VSS snapshot: %s", err))
 			activeSnapshots[volumeName] = snapshot
 		}
